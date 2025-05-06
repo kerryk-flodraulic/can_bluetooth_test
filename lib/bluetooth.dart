@@ -25,11 +25,14 @@ class CanBluetooth {
   late StreamSubscription scanStream;
   late StreamSubscription scanState;
 
-  void init(){
+  void init({LogLevel logLevel = LogLevel.none}){
     scanStream = FlutterBluePlus.onScanResults.listen(scannedDevice);
     scanState = FlutterBluePlus.adapterState.listen(adapterStateUpdated);
-    FlutterBluePlus.logLevel == LogLevel.none;
+    changeLogLevel(logLevel);
+  }
 
+  void changeLogLevel(LogLevel logLevel){
+    FlutterBluePlus.setLogLevel(logLevel);
   }
 
   void scan(){
@@ -51,7 +54,6 @@ class CanBluetooth {
     ScanResult result = results.last;
     devices[result.device.remoteId.str] = result.device;
     addedDevice.value = DateTime.now();
-    print(result.device.advName);
   }
 
 
@@ -90,58 +92,52 @@ class CanBluetooth {
 
   void readCharacteristics(BluetoothService service)async{
     var characteristics = service.characteristics;
-    BluetoothDevice? device = null;
+    BluetoothDevice? device;
     for(BluetoothCharacteristic characteristic in characteristics) {
-        device ??= characteristic.device;
-        if(!deviceCharacteristics.containsKey(device.advName)) deviceCharacteristics[device.advName] = {};
-        if(!deviceCharacteristics[device.advName]!.containsKey(service.uuid.str)) deviceCharacteristics[device.advName]![service.uuid.str] = {};
-        deviceCharacteristics[device.advName]![service.uuid.str]![characteristic.uuid.str] = characteristic;
+      device ??= characteristic.device;
+      if(!deviceCharacteristics.containsKey(device.advName)) deviceCharacteristics[device.advName] = {};
+      if(!deviceCharacteristics[device.advName]!.containsKey(service.uuid.str)) deviceCharacteristics[device.advName]![service.uuid.str] = {};
+      deviceCharacteristics[device.advName]![service.uuid.str]![characteristic.uuid.str] = characteristic;
 
-        List<String> properties = [];
-        if(characteristic.properties.authenticatedSignedWrites) properties.add("authenticatedSignedWrites");
-        if(characteristic.properties.broadcast) properties.add("broadcast");
-        if(characteristic.properties.extendedProperties) properties.add("extendedProperties");
-        if(characteristic.properties.indicate) properties.add("indicate");
-        if(characteristic.properties.indicateEncryptionRequired) properties.add("indicateEncryptionRequired");
-        if(characteristic.properties.notify) properties.add("notify");
-        if(characteristic.properties.notifyEncryptionRequired) properties.add("notifyEncryptionRequired");
-        if(characteristic.properties.read) properties.add("read");
-        if(characteristic.properties.write) properties.add("write");
-        if(characteristic.properties.writeWithoutResponse) properties.add("writeWithoutResponse");
-        print("${device.advName} : ${characteristic.uuid.str} ${properties}");
+      List<String> properties = [];
+      if(characteristic.properties.authenticatedSignedWrites) properties.add("authenticatedSignedWrites");
+      if(characteristic.properties.broadcast) properties.add("broadcast");
+      if(characteristic.properties.extendedProperties) properties.add("extendedProperties");
+      if(characteristic.properties.indicate) properties.add("indicate");
+      if(characteristic.properties.indicateEncryptionRequired) properties.add("indicateEncryptionRequired");
+      if(characteristic.properties.notify) properties.add("notify");
+      if(characteristic.properties.notifyEncryptionRequired) properties.add("notifyEncryptionRequired");
+      if(characteristic.properties.read) properties.add("read");
+      if(characteristic.properties.write) properties.add("write");
+      if(characteristic.properties.writeWithoutResponse) properties.add("writeWithoutResponse");
+      debugPrint("${device.advName} : ${characteristic.uuid.str} $properties");
 
-        if(characteristic.properties.read){
-          if(!deviceCharacteristicsStreams.containsKey(device.advName)) deviceCharacteristicsStreams[device.advName] = {};
-          /*
-          read(characteristic).then((value){
-            print("${device!.advName} : ${characteristic.uuid.str} \n ${value.toString()}");
-          });
+      if(characteristic.properties.read){
+        if(!deviceCharacteristicsStreams.containsKey(device.advName)) deviceCharacteristicsStreams[device.advName] = {};
+      }
+      if(characteristic.properties.notify){
+        await characteristic.setNotifyValue(true);
+        deviceCharacteristicsStreams[device.advName]![characteristic.uuid.str] = onRead(characteristic).listen((value)=>handleCANMessage(device!,value));
+      }
+      if(characteristic.properties.write){
+        if(!deviceCharacteristicsStreams.containsKey(device.advName)) deviceCharacteristicsStreams[device.advName] = {};
+      }
+    }
+  }
 
-          deviceCharacteristicsStreams[device.advName]![characteristic.uuid.str] = onRead(characteristic).listen((value){
-            print("onRead ${device!.advName} : ${characteristic.uuid.str} \n ${value.toString()}");
-          });*/
-
-        }
-        if(characteristic.properties.notify){
-          await characteristic.setNotifyValue(true);
-          deviceCharacteristicsStreams[device.advName]![characteristic.uuid.str] = onRead(characteristic).listen((value){
-              if(!deviceData.containsKey(device!.remoteId.str)) deviceData[device!.remoteId.str] = {};
-              if(value.length > 5){
-                bool isCan = (value[0] == 0x31);
-                Uint8List valuesParsed = Uint8List.fromList(value.skip(1).toList());
-                int id =  valuesParsed.buffer.asUint32List().first;
-                if(!deviceData[device!.remoteId.str]!.containsKey(id))deviceData[device!.remoteId.str]![id] = BlueMessage(data:value);
-                else deviceData[device!.remoteId.str]![id]!.update(id: id, rawData: value);
-                updateFromMessage.value = DateTime.now();
-              }
-            }); 
-        }
-        if(characteristic.properties.notify){
-          if(!deviceCharacteristicsStreams.containsKey(device.advName)) deviceCharacteristicsStreams[device.advName] = {};
-           deviceCharacteristicsStreams[device.advName]![characteristic.uuid.str] = onRead(characteristic).listen((value){
-            print("${device!.advName} : ${characteristic.uuid.str} \n ${value.toString()}");
-          });
-        }
+  void handleCANMessage(BluetoothDevice device,List<int> msg){
+    if(!deviceData.containsKey(device.remoteId.str)) deviceData[device.remoteId.str] = {};
+    if(msg.length > 5){
+      //bool isCan = (msg[0] == 0x31);
+      Uint8List valuesParsed = Uint8List.fromList(msg.skip(1).toList());
+      int id =  valuesParsed.buffer.asUint32List().first;
+      if(!deviceData[device.remoteId.str]!.containsKey(id)){
+        deviceData[device.remoteId.str]![id] = BlueMessage(data:msg);
+      }
+      else{
+        deviceData[device.remoteId.str]![id]!.update(id: id, rawData: msg);
+      }
+      updateFromMessage.value = DateTime.now();
     }
   }
 
@@ -160,6 +156,6 @@ class BlueMessage{
   void update({required int id, required List<int> rawData}){
     data = rawData;
     timeStamp = DateTime.now();
-    print("Updated: $rawData @ Time: $timeStamp");
+    debugPrint("Updated: $rawData @ Time: $timeStamp");
   }
 }
