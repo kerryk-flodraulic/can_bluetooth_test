@@ -3,14 +3,18 @@ description: "A new Flutter project."
 publish_to: 'none'
 version: 0.1.0
 
+
 environment:
-  sdk: ^3.5.3
+  sdk: ">=3.3.0 <4.0.0"
 
 dependencies:
   flutter:
     sdk: flutter
-    
-  flutter_blue_plus:
+  flutter_blue_plus: ^1.32.4
+  permission_handler: ^11.3.0
+  share_plus: ^11.0.0
+  csv: ^5.0.2
+
 
 dev_dependencies:
   flutter_test:
