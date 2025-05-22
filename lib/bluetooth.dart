@@ -1,272 +1,261 @@
-/**
- * OLD FILEimport 'dart:async';
-import 'crc32.dart';
-import 'dart:typed_data';
-import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+// import 'dart:async';
+// import 'crc32.dart';
+// import 'dart:typed_data';
+// import 'package:flutter/material.dart';
+// import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
-// CanBluetooth Singleton
-// Manages all Bluetooth communication and CAN message handling.
-// Responsibilities:
-// - Scanning for BT devices
-// - Connecting and disconnecting from devices
-// - Discovering GATT services and characteristics
-// - Subscribing to notifications
-// - Sending/receiving CAN frames
-class CanBluetooth {
-  // Private constructor for singleton
-  CanBluetooth._();
 
-  // Global singleton instance
-  static final CanBluetooth instance = CanBluetooth._();
+// class CanBluetooth {
+//   // Private constructor for singleton
+//   CanBluetooth._();
 
-  // BT scan results
-  final Map<String, ScanResult> scanResults = {};
+//   // Global singleton instance
+//   static final CanBluetooth instance = CanBluetooth._();
 
-  // Connected devices by ID
-  final Map<String, BluetoothDevice> connectedDevices = {};
+//   // BT scan results
+//   final Map<String, ScanResult> scanResults = {};
 
-  // Services per device
-  final Map<String, Map<String, BluetoothService>> deviceServices = {};
+//   // Connected devices by ID
+//   final Map<String, BluetoothDevice> connectedDevices = {};
 
-  // Characteristics per service per device
-  final Map<String, Map<String, Map<String, BluetoothCharacteristic>>>
-      deviceCharacteristics = {};
+//   // Services per device
+//   final Map<String, Map<String, BluetoothService>> deviceServices = {};
 
-  // Writable characteristics per device
-  final Map<String, Map<String, BluetoothCharacteristic>>
-      writableCharacteristics = {};
+//   // Characteristics per service per device
+//   final Map<String, Map<String, Map<String, BluetoothCharacteristic>>>
+//       deviceCharacteristics = {};
 
-  // Notify subscriptions per device/characteristic
-  final Map<String, Map<String, StreamSubscription<List<int>>>> notifyStreams =
-      {};
+//   // Writable characteristics per device
+//   final Map<String, Map<String, BluetoothCharacteristic>>
+//       writableCharacteristics = {};
 
-  // Cached CAN messages per device and CAN ID
-  final Map<String, Map<int, BlueMessage>> deviceData = {};
+//   // Notify subscriptions per device/characteristic
+//   final Map<String, Map<String, StreamSubscription<List<int>>>> notifyStreams =
+//       {};
 
-  // Notifiers to trigger UI updates
-  final ValueNotifier<DateTime> addedDevice = ValueNotifier(DateTime.now());
-  final ValueNotifier<DateTime> connectedDevice = ValueNotifier(DateTime.now());
-  final ValueNotifier<DateTime> update = ValueNotifier(DateTime.now());
-  final ValueNotifier<DateTime> messageUpdate = ValueNotifier(DateTime.now());
-  final ValueNotifier<BluetoothAdapterState> adapterState =
-      ValueNotifier(FlutterBluePlus.adapterStateNow);
+//   // Cached CAN messages per device and CAN ID
+//   final Map<String, Map<int, BlueMessage>> deviceData = {};
 
-  // Stream for broadcasting received CAN messages
-  final StreamController<BlueMessage> _messageStreamController =
-      StreamController<BlueMessage>.broadcast();
+//   // Notifiers to trigger UI updates
+//   final ValueNotifier<DateTime> addedDevice = ValueNotifier(DateTime.now());
+//   final ValueNotifier<DateTime> connectedDevice = ValueNotifier(DateTime.now());
+//   final ValueNotifier<DateTime> update = ValueNotifier(DateTime.now());
+//   final ValueNotifier<DateTime> messageUpdate = ValueNotifier(DateTime.now());
+//   final ValueNotifier<BluetoothAdapterState> adapterState =
+//       ValueNotifier(FlutterBluePlus.adapterStateNow);
 
-  // Public stream consumers listen to
-  Stream<BlueMessage> get messageStream => _messageStreamController.stream;
+//   // Stream for broadcasting received CAN messages
+//   final StreamController<BlueMessage> _messageStreamController =
+//       StreamController<BlueMessage>.broadcast();
 
-  // BT scanning and adapter state subscriptions
-  late StreamSubscription<List<ScanResult>> scanStream;
-  late StreamSubscription<BluetoothAdapterState> adapterStateStream;
+//   // Public stream consumers listen to
+//   Stream<BlueMessage> get messageStream => _messageStreamController.stream;
 
-  // Initializes BT listeners and clears cached state
-  void init({LogLevel logLevel = LogLevel.info}) {
-    scanStream = FlutterBluePlus.onScanResults.listen(_handleScanResults);
+//   // BT scanning and adapter state subscriptions
+//   late StreamSubscription<List<ScanResult>> scanStream;
+//   late StreamSubscription<BluetoothAdapterState> adapterStateStream;
 
-    adapterStateStream = FlutterBluePlus.adapterState.listen((state) {
-      adapterState.value = state;
-      debugPrint('Bluetooth Adapter State: $state');
-    });
+//   // Initializes BT listeners and clears cached state
+//   void init({LogLevel logLevel = LogLevel.info}) {
+//     scanStream = FlutterBluePlus.onScanResults.listen(_handleScanResults);
 
-    FlutterBluePlus.setLogLevel(logLevel);
+//     adapterStateStream = FlutterBluePlus.adapterState.listen((state) {
+//       adapterState.value = state;
+//       debugPrint('Bluetooth Adapter State: $state');
+//     });
 
-    scanResults.clear();
-    connectedDevices.clear();
-    deviceServices.clear();
-    deviceCharacteristics.clear();
-    notifyStreams.clear();
-    writableCharacteristics.clear();
-  }
+//     FlutterBluePlus.setLogLevel(logLevel);
 
-  // Starts BT scan for nearby devices
-  void startScan() {
-    FlutterBluePlus.startScan(timeout: const Duration(seconds: 6));
-    update.value = DateTime.now();
-  }
+//     scanResults.clear();
+//     connectedDevices.clear();
+//     deviceServices.clear();
+//     deviceCharacteristics.clear();
+//     notifyStreams.clear();
+//     writableCharacteristics.clear();
+//   }
 
-  // Stops BT scan
-  void stopScan() {
-    FlutterBluePlus.stopScan();
-    update.value = DateTime.now();
-  }
+//   // Starts BT scan for nearby devices
+//   void startScan() {
+//     FlutterBluePlus.startScan(timeout: const Duration(seconds: 6));
+//     update.value = DateTime.now();
+//   }
 
-  // Handles new scan results and updates internal list
-  void _handleScanResults(List<ScanResult> results) {
-    for (var result in results) {
-      scanResults[result.device.remoteId.str] = result;
-    }
-    addedDevice.value = DateTime.now(); // Notify UI
-  }
+//   // Stops BT scan
+//   void stopScan() {
+//     FlutterBluePlus.stopScan();
+//     update.value = DateTime.now();
+//   }
 
-  // Connects to a BT device and discovers its services
-  Future<void> connect(BluetoothDevice device) async {
-    try {
-      await device.connect();
-      connectedDevices[device.remoteId.str] = device;
-      connectedDevice.value = DateTime.now();
+//   // Handles new scan results and updates internal list
+//   void _handleScanResults(List<ScanResult> results) {
+//     for (var result in results) {
+//       scanResults[result.device.remoteId.str] = result;
+//     }
+//     addedDevice.value = DateTime.now(); // Notify UI
+//   }
 
-      final services = await device.discoverServices();
-      _mapServices(device, services);
-    } catch (e) {
-      debugPrint("Connection error: $e");
-    }
-  }
+//   // Connects to a BT device and discovers its services
+//   Future<void> connect(BluetoothDevice device) async {
+//     try {
+//       await device.connect();
+//       connectedDevices[device.remoteId.str] = device;
+//       connectedDevice.value = DateTime.now();
 
-  // Disconnects from a BT device and cancels subscriptions
-  void disconnect(BluetoothDevice device) {
-    device.disconnect();
-    connectedDevices.remove(device.remoteId.str);
-    _cancelNotifyStreams(device.remoteId.str);
-    connectedDevice.value = DateTime.now();
-  }
+//       final services = await device.discoverServices();
+//       _mapServices(device, services);
+//     } catch (e) {
+//       debugPrint("Connection error: $e");
+//     }
+//   }
 
-  // Maps all services and characteristics and stores writable + notify ones
-  void _mapServices(BluetoothDevice device, List<BluetoothService> services) {
-    final deviceId = device.remoteId.str;
+//   // Disconnects from a BT device and cancels subscriptions
+//   void disconnect(BluetoothDevice device) {
+//     device.disconnect();
+//     connectedDevices.remove(device.remoteId.str);
+//     _cancelNotifyStreams(device.remoteId.str);
+//     connectedDevice.value = DateTime.now();
+//   }
 
-    for (var service in services) {
-      deviceServices.putIfAbsent(deviceId, () => {})[service.uuid.str] =
-          service;
+//   // Maps all services and characteristics and stores writable + notify ones
+//   void _mapServices(BluetoothDevice device, List<BluetoothService> services) {
+//     final deviceId = device.remoteId.str;
 
-      for (var characteristic in service.characteristics) {
-        deviceCharacteristics.putIfAbsent(deviceId, () => {}).putIfAbsent(
-                service.uuid.str, () => {})[characteristic.uuid.str] =
-            characteristic;
+//     for (var service in services) {
+//       deviceServices.putIfAbsent(deviceId, () => {})[service.uuid.str] =
+//           service;
 
-        if (characteristic.properties.notify) {
-          _subscribeToNotify(deviceId, characteristic);
-        }
+//       for (var characteristic in service.characteristics) {
+//         deviceCharacteristics.putIfAbsent(deviceId, () => {}).putIfAbsent(
+//                 service.uuid.str, () => {})[characteristic.uuid.str] =
+//             characteristic;
 
-        if (characteristic.properties.write ||
-            characteristic.properties.writeWithoutResponse) {
-          writableCharacteristics.putIfAbsent(
-              deviceId, () => {})[characteristic.uuid.str] = characteristic;
-        }
-      }
-    }
-  }
+//         if (characteristic.properties.notify) {
+//           _subscribeToNotify(deviceId, characteristic);
+//         }
 
-  // Subscribes to notifications for a characteristic
-  void _subscribeToNotify(
-      String deviceId, BluetoothCharacteristic characteristic) async {
-    try {
-      await characteristic.setNotifyValue(true);
-      final stream = characteristic.lastValueStream.listen((value) {
-      _handleCANMessage(deviceId, value);
-        print(characteristic.characteristicUuid);
-        print(value.map((e) => e.toRadixString(16)).join(" "));
-      });
+//         if (characteristic.properties.write ||
+//             characteristic.properties.writeWithoutResponse) {
+//           writableCharacteristics.putIfAbsent(
+//               deviceId, () => {})[characteristic.uuid.str] = characteristic;
+//         }
+//       }
+//     }
+//   }
 
-      notifyStreams.putIfAbsent(deviceId, () => {})[characteristic.uuid.str] =
-          stream;
-    } catch (e) {
-      debugPrint("Notify error: $e");
-    }
-  }
+//   // Subscribes to notifications for a characteristic
+//   void _subscribeToNotify(
+//       String deviceId, BluetoothCharacteristic characteristic) async {
+//     try {
+//       await characteristic.setNotifyValue(true);
+//       final stream = characteristic.lastValueStream.listen((value) {
+//         // _handleCANMessage(deviceId, value);
+//         print(characteristic.characteristicUuid);
+//         print(value.map((e) => e.toRadixString(16)).join(" "));
+//       });
 
-  // Cancels all notify subscriptions for a device
-  void _cancelNotifyStreams(String deviceId) {
-    if (notifyStreams.containsKey(deviceId)) {
-      for (var sub in notifyStreams[deviceId]!.values) {
-        sub.cancel();
-      }
-      notifyStreams.remove(deviceId);
-    }
-  }
+//       notifyStreams.putIfAbsent(deviceId, () => {})[characteristic.uuid.str] =
+//           stream;
+//     } catch (e) {
+//       debugPrint("Notify error: $e");
+//     }
+//   }
 
-  // Parses an incoming CAN message and adds it to deviceData
-  void _handleCANMessage(String deviceId, List<int> msg) {
-    if (msg.length < 13) return;
+//   // Cancels all notify subscriptions for a device
+//   void _cancelNotifyStreams(String deviceId) {
+//     if (notifyStreams.containsKey(deviceId)) {
+//       for (var sub in notifyStreams[deviceId]!.values) {
+//         sub.cancel();
+//       }
+//       notifyStreams.remove(deviceId);
+//     }
+//   }
 
-    // Extract CAN ID from first 4 bytes
-    final identifier =
-        Uint8List.fromList(msg.sublist(0, 4)).buffer.asUint32List().first;
+//   // Parses an incoming CAN message and adds it to deviceData
+//   void _handleCANMessage(String deviceId, List<int> msg) {
+//     if (msg.length < 13) return;
 
-    // Flag logic can be added here if needed from msg[4]
-    final blueMsg = BlueMessage(
-      identifier: identifier,
-      data: msg,
-      flagged: false,
-    );
+//     // Extract CAN ID from first 4 bytes
+//     final identifier =
+//         Uint8List.fromList(msg.sublist(0, 4)).buffer.asUint32List().first;
 
-    deviceData.putIfAbsent(deviceId, () => {})[identifier] = blueMsg;
-    messageUpdate.value = DateTime.now();
-    _messageStreamController.add(blueMsg); // Broadcast to UI
-  }
+//     // Flag logic can be added here if needed from msg[4]
+//     final blueMsg = BlueMessage(
+//       identifier: identifier,
+//       data: msg,
+//       flagged: false,
+//     );
 
-//Update write to device to use the calculate checksum and then call it in the subscribe notify check this == this flutter: 2b68c570-8e48-11e7-bb31-be2e44b06b34
-// flutter: 31 f 10 7 a0 10 8 0 0 0 0 0 0 0 0 c5 1b 8f 59, then make sure to change the way the can log is displaying output -
-  // Sends data to a writable characteristic (ASCII or binary)
-  Future<void> writeToDevice(
-      String deviceId, String charUuid, List<int> data) async {
-    try {
-      final characteristic = writableCharacteristics[deviceId]?[charUuid];
-      if (characteristic == null) {
-        debugPrint("Characteristic not found for $deviceId / $charUuid");
-        return;
-      }
-      if (!characteristic.properties.write &&
-          !characteristic.properties.writeWithoutResponse) {
-        debugPrint("Characteristic $charUuid is not writable");
-        return;
-      }
+//     deviceData.putIfAbsent(deviceId, () => {})[identifier] = blueMsg;
+//     messageUpdate.value = DateTime.now();
+//     _messageStreamController.add(blueMsg); // Broadcast to UI
+//   }
 
-      final fullData = appendCrc32(data); // Add the checksum
+// //Update write to device to use the calculate checksum and then call it in the subscribe notify check this == this flutter: 2b68c570-8e48-11e7-bb31-be2e44b06b34
+// // flutter: 31 f 10 7 a0 10 8 0 0 0 0 0 0 0 0 c5 1b 8f 59, then make sure to change the way the can log is displaying output -
+//   // Sends data to a writable characteristic (ASCII or binary)
+//   Future<void> writeToDevice(
+//       String deviceId, String charUuid, List<int> data) async {
+//     try {
+//       final characteristic = writableCharacteristics[deviceId]?[charUuid];
+//       if (characteristic == null) {
+//         debugPrint("Characteristic not found for $deviceId / $charUuid");
+//         return;
+//       }
+//       if (!characteristic.properties.write &&
+//           !characteristic.properties.writeWithoutResponse) {
+//         debugPrint("Characteristic $charUuid is not writable");
+//         return;
+//       }
 
-      await characteristic.write(fullData, withoutResponse: true);
-      debugPrint(
-          "Sent ${fullData.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')} to $charUuid");
-    } catch (e) {
-      debugPrint(" Write failed: $e");
-    }
-  }
+//       final fullData = appendCrc32(data); // Add the checksum
 
-  // Reads from a readable characteristic
-  Future<List<int>> readFromDevice(
-      String deviceId, String serviceUuid, String charUuid) async {
-    final characteristic =
-        deviceCharacteristics[deviceId]?[serviceUuid]?[charUuid];
-    if (characteristic != null && characteristic.properties.read) {
-      return await characteristic.read();
-    }
-    return [];
-  }
-}
+//       await characteristic.write(fullData, withoutResponse: true);
+//       debugPrint(
+//           "Sent ${fullData.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')} to $charUuid");
+//     } catch (e) {
+//       debugPrint(" Write failed: $e");
+//     }
+//   }
 
-// Appends a 4-byte CRC32 checksum to the data using crc32.dart implementation
-List<int> appendCrc32(List<int> data) {
-  final crc = CRC32().calculate(data);
-  final crcBytes = ByteData(4)..setUint32(0, crc, Endian.big);
-  return [...data, ...crcBytes.buffer.asUint8List()];
-}
+//   // Reads from a readable characteristic
+//   Future<List<int>> readFromDevice(
+//       String deviceId, String serviceUuid, String charUuid) async {
+//     final characteristic =
+//         deviceCharacteristics[deviceId]?[serviceUuid]?[charUuid];
+//     if (characteristic != null && characteristic.properties.read) {
+//       return await characteristic.read();
+//     }
+//     return [];
+//   }
 
-// Data model representing a received CAN message
-class BlueMessage {
-  final List<int> data; // Raw message bytes
-  final int identifier; // Parsed CAN ID (32-bit)
-  final bool flagged; 
+// // Appends a 4-byte CRC32 checksum to the data using crc32.dart implementation
+//   List<int> appendCrc32(List<int> data) {
+//     final crc = CRC32().calculate(data);
+//     final crcBytes = ByteData(4)..setUint32(0, crc, Endian.big);
+//     return [...data, ...crcBytes.buffer.asUint8List()];
+//   }
+// }
 
-  BlueMessage({
-    required this.data,
-    required this.identifier,
-    required this.flagged,
-  });
-}
+// // Data model representing a received CAN message
+// class BlueMessage {
+//   final List<int> data; // Raw message bytes
+//   final int identifier; // Parsed CAN ID (32-bit)
+//   final bool flagged;
 
- */
+//   BlueMessage({
+//     required this.data,
+//     required this.identifier,
+//     required this.flagged,
+//   });
+// }
 
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'crc32.dart'; // Import your CRC32 implementation
+import 'crc32.dart'; 
 
-// CanBluetooth Singleton
-// ----------------------
+
 // Manages all Bluetooth communication and CAN message handling.
 // Responsibilities:
 // - Scanning for BT devices
@@ -427,12 +416,13 @@ class CanBluetooth {
       await characteristic.setNotifyValue(true);
       final stream = characteristic.lastValueStream.listen((value) {
         if (value.isNotEmpty) {
-          debugPrint("Notify from ${characteristic.characteristicUuid}");
-          debugPrint(
-              "Raw: ${value.map((e) => e.toRadixString(16).padLeft(2, '0')).join(' ')}");
+          //debugPrint("Notify from ${characteristic.characteristicUuid}");
+          //debugPrint("Raw: ${value.map((e) => e.toRadixString(16).padLeft(2, '0')).join(' ')}");
 
-          _handleCANMessage(
-              deviceId, value); // Now actively handles incoming data
+
+
+          if (characteristic.characteristicUuid.toString().startsWith("2b68c570"))
+           _handleCANMessage(deviceId, value); // Now actively handles incoming data
         }
       });
 
@@ -453,24 +443,25 @@ class CanBluetooth {
     }
   }
  void _handleCANMessage(String deviceId, List<int> msg) {
-    if (msg.length < 13) {
-      debugPrint("Too short ? Got ${msg.length} bytes");
-      return;
-    }
+  
+    final extended = 0x31 == msg[0];
+    final standard = 0x21 == msg[0];
+
+    if (!(extended || standard)) return;
+
+    final data = Uint8List.fromList(msg).buffer.asByteData();
 
     // Extract CAN ID from first 4 bytes (big-endian)
-    final identifier = ByteData.sublistView(Uint8List.fromList(msg.sublist(0, 4)))
-    .getUint32(0, Endian.little);
+    final identifier = extended ? data.getUint32(2, Endian.little) : data.getUint16(2, Endian.little);
 
 
-    debugPrint(
-        " Raw from device (${msg.length} bytes): ${msg.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}");
-final flagByte = msg[4]; 
+    final dlc = msg[extended ? 6 : 4];
+
+    //debugPrint(" Raw from device (${msg.length} bytes): ${msg.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}");
     final blueMsg = BlueMessage(
-      
       identifier: identifier,
-      data: msg,
-       flagged: flagByte != 0,
+      data: msg.skip(extended ? 7 : 5).take(dlc).toList(),
+      flagged: extended,
     );
 
     deviceData.putIfAbsent(deviceId, () => {})[identifier] = blueMsg;
@@ -485,9 +476,29 @@ final flagByte = msg[4];
   List<int> appendCrc32(List<int> data) {
     final crc = CRC32().calculate(data);
     final crcBytes = ByteData(4)
-      ..setUint32(0, crc, Endian.big); // Use Endian.little if required
+      ..setUint32(0, crc, Endian.little); 
     return [...data, ...crcBytes.buffer.asUint8List()];
   }
+
+  sendCANMessage(String deviceId, BlueMessage msg) {
+    print("sent");
+    final data = [
+      msg.flagged ? 0x13 : 12,
+      0,
+      if (msg.flagged) ...Uint32List.fromList([msg.identifier]).buffer.asUint8List()
+      else ...Uint16List.fromList([msg.identifier]).buffer.asUint8List(),
+      msg.data.length,
+      ...msg.data
+    ];
+    
+    data[1] = data.length;
+
+    writeToDevice(
+      deviceId,
+      "2b68c571-8e48-11e7-bb31-be2e44b06b34",      
+      data
+    );
+  } 
 
   // Sends a CAN frame to a writable characteristic, including checksum
   Future<void> writeToDevice(
@@ -506,7 +517,9 @@ final flagByte = msg[4];
 
       final fullData = appendCrc32(data); // Append the 4-byte CRC32
 
-      await characteristic.write(fullData, withoutResponse: true);
+
+
+      characteristic.write(fullData, withoutResponse: true);
       debugPrint(
           "Sent ${fullData.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')} to $charUuid");
     } catch (e) {

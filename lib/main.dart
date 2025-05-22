@@ -1,11 +1,5 @@
-// Flutter app to interface with a Puisi MCBox CAN device over Bluetooth.
-// Features:
-// - Scans and connects to BLE devices
-// - Sends control state as CAN frames (ASCII or binary)
-// - Parses and logs live CAN traffic from device
-// - Supports UI-based control buttons, mutual exclusivity,
-//   live/fixed feed display, filtering, and searching
 
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:io';
@@ -15,6 +9,12 @@ import 'bluetooth.dart';
 import 'crc32.dart';
 import 'dart:typed_data';
 
+
+//Needs to send every 240ms 
+
+
+// Represents a single CAN frame entry in the log.
+// Used to encapsulate metadata like ID, DLC, data payload, and timestamp.
 class CanLogEntry {
   final String canId; // Hex formatted ID
   final int dlc; // Data length
@@ -29,7 +29,8 @@ class CanLogEntry {
     // required this.flag,
     required this.timestamp,
   });
-//Returns formatted timestamps like: "11:11.111"
+
+  //Returns formatted timestamps like: "11:11.111"
   String get timestampFormatted =>
       '${timestamp.hour.toString().padLeft(2, '0')}:'
       '${timestamp.minute.toString().padLeft(2, '0')}:'
@@ -48,33 +49,41 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark(),
-      home: const BluetoothCanReader(),
+      home: const BluetoothCanReader(), // Main UI Screen
     );
   }
 }
 
+// StatefulWidget for the main CAN Bluetooth UI interface.
 class BluetoothCanReader extends StatefulWidget {
   const BluetoothCanReader({super.key});
   @override
   State<BluetoothCanReader> createState() => _BluetoothCanReaderState();
 }
 
+// Internal state class for BluetoothCanReader
 class _BluetoothCanReaderState extends State<BluetoothCanReader> {
   final ScrollController _scrollController = ScrollController();
+
+  // Full CAN log (live feed including duplicates)
   final List<List<String>> canHistory = [];
   List<List<String>> filteredCanHistory = [];
   final TextEditingController _searchController = TextEditingController();
   bool _isPaused = false; // To pause/resume live feed
   bool _showLiveFeed = true; // Toggle live vs fixed feed
   final TextEditingController _deviceFilterController = TextEditingController();
+
+  // Filters for dropdowns in log table
   String _deviceNameFilter = '';
   String selectedChannel = 'All';
   String selectedCanId = 'All';
   String selectedData = 'All';
   String selectedTime = 'All';
-
   String selectedDlc = 'All';
   String selectedDirection = 'All';
+
+  // Returns unique options for dropdown filters in each column.
+  // Special handling for "Time" column to group into 10-second buckets.
   List<String> getUniqueOptions(int columnIndex) {
     final source =
         _showLiveFeed ? canHistory : fixedCanHistoryMap.values.toList();
@@ -122,6 +131,7 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
     final source =
         _showLiveFeed ? canHistory : fixedCanHistoryMap.values.toList();
 
+    // Apply all filters
     filteredCanHistory = source.where((row) {
       final groupMatch = selectedGroupFilter == 'All' ||
           row[6].toLowerCase().contains(selectedGroupFilter.toLowerCase());
@@ -164,22 +174,22 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
     }).toList();
   }
 
-// Stores the most recent unique CAN frames (keyed by Data + Contents)
+  // Stores the most recent unique CAN frames (keyed by Data + Contents)
   final Map<String, List<String>> fixedCanHistoryMap = {};
 
-// Timer used for periodically generating live CAN frames
+  // Timer used for periodically generating live CAN frames
   Timer? _liveCanTimer;
 
-// Timestamp of the first button press (used to calculate elapsed time)
+  // Timestamp of the first button press (used to calculate elapsed time)
   DateTime? firstButtonPressTime;
 
-// App startup time (used in logs or time calculations)
+  // App startup time (used in logs or time calculations)
   late DateTime _appStartTime;
 
-// Flag to enable/disable the live CAN frame feed
+  // Flag to enable/disable the live CAN frame feed
   bool _isLiveFeedRunning = true;
 
-// UI filter values — updated via dropdowns or search
+  // UI filter values — updated via dropdowns or search
   String selectedGroupFilter =
       'All'; // Filter by control group (e.g., "Engine")
   List<String> selectedChannels = ['All']; // Filter by CAN channel (e.g., "0")
@@ -196,10 +206,10 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
   ]; // Filter by message direction ("Transmitted", "Received")
   String selectedContents = 'All';
 
-// Tracks the ON/OFF state of all RCU control buttons
-// - Keys represent control names (as shown in UI)
-// - Values are booleans: true = pressed/active, false = unpressed/inactive
-// - Used to generate CAN data bytes and update button visuals
+  // Tracks the ON/OFF state of all RCU control buttons
+  // - Keys represent control names (as shown in UI)
+  // - Values are booleans: true = pressed/active, false = unpressed/inactive
+  // - Used to generate CAN data bytes and update button visuals
   final Map<String, bool> states = {
     'Water Pump On': false,
     'Water Pump Off': false,
@@ -227,6 +237,7 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
     'Wand Dropped': false,
     'Wand Fault': false,
   };
+
   // Grouping the control buttons by logical category.
   // These groups are used to organize the UI layout into cards with labeled icons.
   // Each list contains mutually exclusive or related digital control buttons
@@ -283,7 +294,7 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
     });
   }
 
-//Returns the name of the currently connected bluetooth device and falls back to unnamed device is no name is available.
+  //Returns the name of the currently connected bluetooth device and falls back to unnamed device is no name is available.
   String get connectedDeviceName {
     if (CanBluetooth.instance.connectedDevices.isEmpty) {
       return 'Not connected';
@@ -292,17 +303,18 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
     final connectedId = CanBluetooth.instance.connectedDevices.keys.first;
     final device = CanBluetooth.instance.connectedDevices[connectedId];
 
+    // Attempt to find the corresponding ScanResult from earlier scans
     final entry = CanBluetooth.instance.scanResults.entries.firstWhere(
       (e) => e.value.device.remoteId.str == connectedId,
       orElse: () => CanBluetooth.instance.scanResults.entries.first,
     );
 
+    // Try to use the advertised local name, else show fallback
     final name = entry.value.advertisementData.localName;
-
     return name.isNotEmpty ? name : '(Unnamed Device)';
   }
 
-//Requests the necessary BT and location permissions based on platform (Android/IOS/MACOS in pref runners)
+  //Requests the necessary BT and location permissions based on platform (Android/IOS/MACOS in pref runners)
   Future<void> _ensureBluetoothPermissions() async {
     if (Platform.isAndroid) {
       await [
@@ -319,7 +331,7 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
     }
   }
 
-//Map of control names to [byte index, bit condition]
+  //Map of control names to [byte index, bit condition]
   List<int> getByteValues() {
     List<int> bytes = List.filled(9, 0);
     Map<String, List<int>> bitMap = {
@@ -349,7 +361,8 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
       'Wand Dropped': [8, 2],
       'Wand Fault': [8, 3],
     };
-//If a control is active set its correspondinf bit in the byte
+
+    // If a control is active, set its corresponding bit in the byte
     for (var entry in bitMap.entries) {
       if (states[entry.key] == true) {
         int byte = entry.value[0];
@@ -361,9 +374,11 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
     return bytes;
   }
 
-  /// Constructs a CAN frame entry as a list of strings.
-  /// This frame is later used for logging or display in the CAN history table.
+  // Constructs a CAN frame entry as a list of strings.
+  // This frame is later used for logging or display in the CAN history table.
   List<String> createCanFrame(List<int> bytes, Duration duration) {
+
+
     // Collect all currently pressed buttons as a single comma-separated string
     String pressed = states.entries
         .where((entry) => entry.value) // Filter for active (true) buttons
@@ -373,9 +388,23 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
     // Format the time since app start or first interaction
     String formattedTime = _formatDuration(duration);
 
+    if (CanBluetooth.instance.connectedDevices.isNotEmpty) {
+      CanBluetooth.instance.sendCANMessage(
+        CanBluetooth.instance.connectedDevices.keys.first, 
+        BlueMessage(
+          data: bytes.getRange(1, 9).toList(), 
+          identifier: 0x0CFF0171, 
+          flagged: true
+          )
+      );
+    }
+
+
     return [
+
+
       '1', // Channel (hardcoded to '1' for now — could be dynamic if needed)
-      '18FECA10', // CAN ID (fixed PGN used for transmission)
+      '0CFF0171', // CAN ID (fixed PGN used for transmission)
       '8', // DLC: Data Length Code (always 8 in this app)
 
       // Format the data bytes from byte[1] to byte[8] (skip byte[0], the control map header)
@@ -391,14 +420,16 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
       'Transmitted', // Direction of the frame
       pressed.isEmpty
           ? 'No buttons pressed'
-          : pressed, // Summary of active controls
+          : pressed, 
     ];
+
+
+
   }
 
-// Starts a timer that simulates transmitting a CAN frame every second
-// Only runs if the live feed is active and not paused
+  // Starts a timer that simulates transmitting a CAN frame every 250 milliseconfs  Only runs if the live feed is active and not paused
   void _startLiveFeed() {
-    _liveCanTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+    _liveCanTimer = Timer.periodic(const Duration(milliseconds: 250), (_) {
       // Skip if feed is paused or disabled
       if (!_isLiveFeedRunning || _isPaused) return;
 
@@ -429,15 +460,12 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
     });
   }
 
+  // Listens to incoming CAN messages from Bluetooth and parses into UI-ready format
   void _listenToBluetoothMessages() {
     CanBluetooth.instance.messageStream.listen((msg) {
       final bytes = msg.data;
 
-      if (bytes.length < 13) {
-        print(' Incomplete frame: ${bytes.length} bytes');
-        return;
-      }
-//Extracts 4- byte CAN ID (Big Endian)
+      //Extracts 4- byte CAN ID (Big Endian)
 
       final canId = msg.identifier;
       //ByteData.sublistView(Uint8List.fromList(bytes.sublist(0, 4)))
@@ -449,19 +477,16 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
       //  final canId =
       //   ByteData.sublistView(Uint8List.fromList(bytes.sublist(0, 4)))
       //     .getUint32(0, Endian.little); // matches CANKing decimal IDs
-//converts the integer to a hexadecimal string (base 16).nsures the hex string is exactly 8 characters long, padding with 0s on the left if necessary.
+      //converts the integer to a hexadecimal string (base 16).nsures the hex string is exactly 8 characters long, padding with 0s on the left if necessary.
 
       final canIdHex = canId.toRadixString(16).padLeft(8, '0').toUpperCase();
       final canIdDisplay =
           '$canIdHex'; // this was removed-- ($canId)'; // Hex + decimal in one
 
-      final dlc = 8;
+      final dlc = msg.data.length;
 
       //Extract D0-D7 bytes
-      final dataList = bytes
-          .sublist(5, 13)
-          .map((b) => b.toRadixString(16).toUpperCase().padLeft(2, '0'))
-          .toList();
+      final dataList = msg.data.map((e) => e.toRadixString(16));
 
       final dataHexString = dataList.join(' ');
 
@@ -477,7 +502,8 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
       final crcDisplay = crcBytes
           .map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase())
           .join(' ');
-*/
+      */
+
       final frame = [
         '0', // Channel
         canIdDisplay, // CAN ID: HEX
@@ -503,8 +529,8 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
     });
   }
 
-  /// Formats a Duration into a string like "MM:SS.mmm"
-  /// Used for timestamping CAN log entries relative to app or button start time
+  // Formats a Duration into a string like "MM:SS.mmm"
+  // Used for timestamping CAN log entries relative to app or button start time
   String _formatDuration(Duration d) {
     final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
@@ -512,8 +538,8 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
     return '$minutes:$seconds.$millis';
   }
 
-  /// Builds the grouped control buttons UI for all digital controls.
-  /// Buttons are arranged into two vertical columns of group cards for visual balance.
+  // Builds the grouped control buttons UI for all digital controls.
+  // Buttons are arranged into two vertical columns of group cards for visual balance.
   Widget controlButtons() {
     // Define which groups appear in the left column
     final leftColumnGroups = [
@@ -569,10 +595,10 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
               Center(
                 child: Wrap(
                   alignment: WrapAlignment.center,
-                  spacing: 10,
-                  runSpacing: 10,
+                  spacing: 10, // Horizontal spacing
+                  runSpacing: 10, // Vertical spacing
                   children: controls.map((control) {
-                    final isActive = states[control] ?? false;
+                    final isActive = states[control] ?? false; // Get control state
 
                     return GestureDetector(
                       onTap: () {
@@ -626,23 +652,23 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
                             bytes,
                             DateTime.now().difference(firstButtonPressTime!),
                           );
-                          final key = '${frame[3]}|${frame[6]}';
-                          fixedCanHistoryMap[key] = frame;
-                          canHistory.add(frame);
-                          _applyGroupFilter();
+                          final key = '${frame[3]}|${frame[6]}'; // Data|Contents key
+                          fixedCanHistoryMap[key] = frame; // Update fixed log
+                          canHistory.add(frame); // Append to live history
+                          _applyGroupFilter(); // Re-filter UI
                         });
                       },
 
                       // UI styling with animation for toggle feedback
                       child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 250),
+                        duration: const Duration(milliseconds: 250), // Animate state changes
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
                           color: isActive
-                              ? Colors.tealAccent.withOpacity(0.2)
-                              : Colors.grey[800],
-                          borderRadius: BorderRadius.circular(10),
+                              ? Colors.tealAccent.withOpacity(0.2) // Active background
+                              : Colors.grey[800], // Inactive background
+                          borderRadius: BorderRadius.circular(10), // Rounded edges
                           border: Border.all(
                             color: isActive ? Colors.tealAccent : Colors.grey,
                           ),
@@ -730,8 +756,8 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
                 // Each dropdown calls setState and reapplies filters on change
                 buildHeaderDropdown(
                     'Channel', selectedChannel, getUniqueOptions(0), (val) {
-                  setState(() => selectedChannel = val!);
-                  _applyGroupFilter();
+                  setState(() => selectedChannel = val!); // Update filter state
+                  _applyGroupFilter(); // Reapply all filters
                 }, flex: 1),
                 buildHeaderDropdown(
                     'CAN ID', selectedCanId, getUniqueOptions(1), (val) {
@@ -769,11 +795,10 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
           ),
 
           // Scrollable List of Filtered Rows
-
           Expanded(
             child: ListView.builder(
-              controller: _scrollController,
-              itemCount: filteredRows.length,
+              controller: _scrollController, // Scroll controller for auto-scroll
+              itemCount: filteredRows.length, // Rows to show
               itemBuilder: (_, index) {
                 final row = filteredRows[index];
                 return Container(
@@ -848,10 +873,10 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
   }
 
   // Builds a styled dropdown menu used in the CAN log table header
-// - Displays column name as a label (e.g., "CAN ID")
-// - Provides selectable filter options for that column
-// - Triggers a callback on selection change
-// - Supports dynamic width via `flex`
+  // - Displays column name as a label (e.g., "CAN ID")
+  // - Provides selectable filter options for that column
+  // - Triggers a callback on selection change
+  // - Supports dynamic width via `flex`
   Widget buildHeaderDropdown(
       String label, // Column label (e.g., "Data", "Time")
       String selectedValue, // Currently selected value
@@ -886,7 +911,7 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
             onChanged: onChanged, // Triggered when user selects an option
 
             // Dropdown items
-            items: options.map((val) {
+            items: options.map((val) { // Build all dropdown items
               return DropdownMenuItem(
                 value: val,
                 child: Text(
@@ -903,7 +928,7 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
                 return Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    '$label ▼',
+                    '$label ▼', // Always display column name with dropdown arrow
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
@@ -920,8 +945,8 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
   }
 
   // Builds a row of Bluetooth scan control buttons:
-// - "Scan" starts scanning for nearby BLE devices
-// - "Stop" halts the ongoing scan
+  // - "Scan" starts scanning for nearby BLE devices
+  // - "Stop" halts the ongoing scan
   Widget scanControl() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -946,6 +971,7 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
     );
   }
 
+  // Displays a scrollable list of nearby Bluetooth devices
   Widget bluetoothDeviceList() {
     return Container(
       height: 200,
@@ -953,15 +979,15 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
         border: Border.all(color: Colors.tealAccent),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: ValueListenableBuilder(
+      child: ValueListenableBuilder( // Rebuilds on new devices added
         valueListenable: CanBluetooth.instance.addedDevice,
         builder: (_, __, ___) {
-          final entries =
-              CanBluetooth.instance.scanResults.entries.where((entry) {
+          // Filter devices by text entered in the filter box
+          final entries = CanBluetooth.instance.scanResults.entries.where((entry) {
             final name = entry.value.advertisementData.localName.toLowerCase();
             return name.contains(_deviceNameFilter);
           }).toList();
-          //Render each device
+          // Render each device
           return ListView(
             children: entries.map((entry) {
               final device = entry.value.device;
@@ -973,7 +999,7 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
               return ListTile(
                 leading: const Icon(Icons.bluetooth),
                 title: Text(name.isNotEmpty ? name : '(Unnamed)'),
-                subtitle: Text(device.remoteId.str),
+                subtitle: Text(device.remoteId.str), // MAC address
                 trailing: ElevatedButton(
                   onPressed: () {
                     if (isConnected) {
@@ -992,9 +1018,10 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
     );
   }
 
+  // Main widget tree layout
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
+    return SafeArea( // Avoids notches on iOS/Android
       child: Scaffold(
         appBar: AppBar(
           title: const Text('AARCOMM Virtualalized RCU'),
@@ -1332,8 +1359,8 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
   }
 
   // Builds a styled header row for the Bluetooth device section
-// - Displays a Bluetooth icon, title text, and Wi-Fi icon
-// - Used to visually indicate the scanning section of the app
+  // - Displays a Bluetooth icon, title text, and Wi-Fi icon
+  // - Used to visually indicate the scanning section of the app
   Widget buildNearHeader() {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12.0),
@@ -1371,9 +1398,9 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
     );
   }
 
-// Builds a stylized header row for the CAN frame log section
-// - Displays a car icon, a bold title, and a receipt icon
-// - Used to visually label the CAN log display area
+  // Builds a stylized header row for the CAN frame log section
+  // - Displays a car icon, a bold title, and a receipt icon
+  // - Used to visually label the CAN log display area
 
   Widget buildCanLogHeader() {
     return Padding(
@@ -1412,9 +1439,9 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
     );
   }
 
-// Builds a stylized header row for the digital control button section
-// - Shows a remote icon, title, and radio button icon
-// - Clearly marks the section containing all virtual RCU buttons
+  // Builds a stylized header row for the digital control button section
+  // - Shows a remote icon, title, and radio button icon
+  // - Clearly marks the section containing all virtual RCU buttons
 
   Widget buildControlHeader() {
     return Padding(
