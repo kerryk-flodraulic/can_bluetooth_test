@@ -10,6 +10,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_test:
+    sdk: flutter
+
   flutter_blue_plus: ^1.32.4
   permission_handler: ^11.3.0
   share_plus: ^11.0.0

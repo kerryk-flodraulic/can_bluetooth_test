@@ -38,10 +38,20 @@ class CanLogEntry {
       '${timestamp.millisecond.toString().padLeft(3, '0')}';
 }
 
-void main() => runApp(const MyApp());
+//void main() => runApp(const MyApp()); // //COMMENTED OUT FOR TESTING-
+
+//used for the testing
+bool testMode = false; //
+
+void main({bool isTest = false}) {
+  testMode = isTest; // 
+  runApp(const MyApp());
+}
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
+//CHANGED FOR TESTING
+  /*
   @override
   Widget build(BuildContext context) {
     //Initialized the BT CAN manager
@@ -52,6 +62,21 @@ class MyApp extends StatelessWidget {
       home: const BluetoothCanReader(), // Main UI Screen
     );
   }
+  */
+@override
+Widget build(BuildContext context) {
+  if (!testMode) {
+    CanBluetooth.instance.init();
+  }
+
+  return MaterialApp(
+    debugShowCheckedModeBanner: false,
+    theme: ThemeData.dark(),
+    home: const BluetoothCanReader(),
+  );
+}
+
+
 }
 
 // StatefulWidget for the main CAN Bluetooth UI interface.
@@ -269,6 +294,8 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
     'Vibrator': Icons.vibration,
   };
 
+//COMMENTED OUT FOR TESTING-
+/*
   @override
   void initState() {
     super.initState();
@@ -286,6 +313,7 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
     //Start the live feed timer to simulate the outgoing CAN frames
     _startLiveFeed();
 
+
     //Apply initial group-based filtering to frame log
     _applyGroupFilter();
     //Refresh UI when a new BT device is connected
@@ -293,6 +321,32 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
       setState(() {});
     });
   }
+*/
+//used for the testing
+@override
+void initState() {
+  super.initState();
+
+  _appStartTime = DateTime.now();
+
+  if (!testMode) {
+    _ensureBluetoothPermissions();
+    CanBluetooth.instance.init();
+    CanBluetooth.instance.startScan();
+    _listenToBluetoothMessages();
+  }
+
+  firstButtonPressTime = DateTime.now();
+  _startLiveFeed();
+  _applyGroupFilter();
+
+  if (!testMode) {
+    CanBluetooth.instance.addedDevice.addListener(() {
+      setState(() {});
+    });
+  }
+}
+
 
   //Returns the name of the currently connected bluetooth device and falls back to unnamed device is no name is available.
   String get connectedDeviceName {
@@ -601,6 +655,10 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
                     final isActive = states[control] ?? false; // Get control state
 
                     return GestureDetector(
+                      //key: Key(control),
+                      // key: const Key('Water Pump On'),
+                      key: Key('btn:$control'), //NEWLY ADDED TO TRACK WIDGETS DURING THE APP TEST 
+
                       onTap: () {
                         setState(() {
                           // Toggle the tapped button's state
