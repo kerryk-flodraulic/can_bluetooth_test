@@ -38,20 +38,13 @@ class CanLogEntry {
       '${timestamp.millisecond.toString().padLeft(3, '0')}';
 }
 
-//void main() => runApp(const MyApp()); // //COMMENTED OUT FOR TESTING-
+void main() => runApp(const MyApp()); 
 
-//used for the testing
-bool testMode = false; //
-
-void main({bool isTest = false}) {
-  testMode = isTest; // 
-  runApp(const MyApp());
-}
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
-//CHANGED FOR TESTING
-  /*
+
+  
   @override
   Widget build(BuildContext context) {
     //Initialized the BT CAN manager
@@ -62,19 +55,7 @@ class MyApp extends StatelessWidget {
       home: const BluetoothCanReader(), // Main UI Screen
     );
   }
-  */
-@override
-Widget build(BuildContext context) {
-  if (!testMode) {
-    CanBluetooth.instance.init();
-  }
-
-  return MaterialApp(
-    debugShowCheckedModeBanner: false,
-    theme: ThemeData.dark(),
-    home: const BluetoothCanReader(),
-  );
-}
+  
 
 
 }
@@ -294,8 +275,8 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
     'Vibrator': Icons.vibration,
   };
 
-//COMMENTED OUT FOR TESTING-
-/*
+
+
   @override
   void initState() {
     super.initState();
@@ -321,31 +302,7 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
       setState(() {});
     });
   }
-*/
-//used for the testing
-@override
-void initState() {
-  super.initState();
 
-  _appStartTime = DateTime.now();
-
-  if (!testMode) {
-    _ensureBluetoothPermissions();
-    CanBluetooth.instance.init();
-    CanBluetooth.instance.startScan();
-    _listenToBluetoothMessages();
-  }
-
-  firstButtonPressTime = DateTime.now();
-  _startLiveFeed();
-  _applyGroupFilter();
-
-  if (!testMode) {
-    CanBluetooth.instance.addedDevice.addListener(() {
-      setState(() {});
-    });
-  }
-}
 
 
   //Returns the name of the currently connected bluetooth device and falls back to unnamed device is no name is available.
@@ -550,13 +507,7 @@ void initState() {
       // Updated variable here
       print('CAN ID: $canIdHex  DLC: $dlc  DATA (hex): $dataHexString');
 
-      /** FINAL CRC INFO REMOVED - NOT ACCURATE 
-      * 
-      final crcBytes = bytes.sublist(bytes.length - 4);
-      final crcDisplay = crcBytes
-          .map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase())
-          .join(' ');
-      */
+  
 
       final frame = [
         '0', // Channel
@@ -657,7 +608,7 @@ void initState() {
                     return GestureDetector(
                       //key: Key(control),
                       // key: const Key('Water Pump On'),
-                      key: Key('btn:$control'), //NEWLY ADDED TO TRACK WIDGETS DURING THE APP TEST 
+                      //key: Key('btn:$control'), //NEWLY ADDED TO TRACK WIDGETS DURING THE APP TEST 
 
                       onTap: () {
                         setState(() {
@@ -1199,8 +1150,8 @@ void initState() {
                             backgroundColor: Colors.lightBlue,
                             foregroundColor: Colors.white,
                           ),
-                          /**
-                           * onPressed: () async {
+                          /*
+                            onPressed: () async {
                             final connected =
                                 CanBluetooth.instance.connectedDevices;
                             if (connected.isEmpty) {
