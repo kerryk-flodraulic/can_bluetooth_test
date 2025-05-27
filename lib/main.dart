@@ -862,14 +862,7 @@ class _BluetoothCanReaderState extends State<BluetoothCanReader> {
                           child: Text(row[6],
                               style: const TextStyle(fontSize: 12))),
 
-                      // Contents
-
-                      /*
-                      Expanded(
-                          flex: 1,
-                          child: Text(row.length > 7 ? row[7] : '',
-                              style: const TextStyle(fontSize: 12))), // CRC
-                              **/ //<--Removed CRC coulumns
+                  
                     ],
                   ),
                 );
